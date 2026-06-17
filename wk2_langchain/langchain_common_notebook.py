@@ -12,6 +12,7 @@ from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.runnables import RunnableSequence
 from langchain_community.vectorstores import SKLearnVectorStore  
+from langchain_postgres import PGVector
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.output_parsers import StrOutputParser
@@ -115,4 +116,5 @@ if __name__ == "__main__":
     except Exception:
         pass
 
+    pgvectordb_conn = "postgresql+psycopg://langchain:langchain!@localhost:5432/cs4603_vectordb"
     DATABRICKS_TOKEN, DATABRICKS_HOST, DATABRICKS_MODEL, (llm, llm_noreason), databricks_embeddings = bootstrap_notebook()
