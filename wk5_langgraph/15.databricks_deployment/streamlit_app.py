@@ -83,12 +83,12 @@ def render_sidebar() -> tuple[str, str, str]:
 
     host = st.sidebar.text_input(
         "Databricks host",
-        value=_default("DATABRICKS_HOST_FREE", "DATABRICKS_HOST"),
+        value=_default("DATABRICKS_HOST"),
         placeholder="https://<workspace>.databricks.com",
     )
     token = st.sidebar.text_input(
         "Databricks token (PAT)",
-        value=_default("DATABRICKS_TOKEN_FREE", "DATABRICKS_TOKEN"),
+        value=_default("DATABRICKS_TOKEN"),
         type="password",
         placeholder="dapi...",
     )
@@ -124,6 +124,14 @@ def ask_agent(client: openai.OpenAI, endpoint: str, history: list[dict]) -> str:
     return response.choices[0].message.content or ""
 
 
+def _sanitize_error(exc: Exception, token: str) -> str:
+    """Remove tokens/secrets from exception messages before displaying."""
+    msg = str(exc)
+    if token:
+        msg = msg.replace(token, "***REDACTED***")
+    return msg
+
+
 def main():
     st.set_page_config(page_title="Deployed Agent Chat", page_icon="🤖", layout="centered")
     st.title("🤖 CS4603 Deployed Agent")
@@ -147,6 +155,19 @@ def main():
         st.error("Set the Databricks host and token in the sidebar first.")
         return
 
+    # Check endpoint status before first request to give better error messages
+    if not st.session_state.get("_endpoint_checked"):
+        ready, detail = get_endpoint_status(host, token, endpoint)
+        st.session_state["_endpoint_checked"] = True
+        if ready == "ERROR":
+            st.error(f"Endpoint problem: {detail}")
+            return
+        if ready != "READY":
+            st.warning(
+                f"Endpoint is **{ready}** — it may be waking up from scale-to-zero "
+                f"(typically 60-90 seconds). The request will be sent but may take a while. {detail}"
+            )
+
     # Show and store the user's message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -161,12 +182,12 @@ def main():
                 st.error(
                     "Connection error — the endpoint may be cold/starting or the "
                     "host is wrong. Use **Check endpoint status** in the sidebar to "
-                    f"confirm it is READY, then retry. Details: {exc}"
+                    f"confirm it is READY, then retry.\n\nDetails: {_sanitize_error(exc, token)}"
                 )
                 st.session_state.messages.pop()  # drop the unanswered user turn
                 return
             except Exception as exc:  # surface auth / endpoint errors to the user
-                st.error(f"Request failed: {exc}")
+                st.error(f"Request failed: {_sanitize_error(exc, token)}")
                 st.session_state.messages.pop()  # drop the unanswered user turn
                 return
         st.markdown(reply)

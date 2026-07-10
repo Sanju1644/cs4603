@@ -163,10 +163,25 @@ SYSTEM_PROMPT = (
     "first, then add your own explanation."
 )
 
+# Validate required environment variables before building the LLM client.
+# If any are missing, raise a clear error so the serving container logs
+# show exactly what went wrong (instead of a cryptic DEPLOYMENT_FAILED).
+_token = os.environ.get("DATABRICKS_TOKEN")
+_host = os.environ.get("DATABRICKS_HOST")
+_model = os.environ.get("DATABRICKS_MODEL")
+
+_missing = [name for name, val in [("DATABRICKS_TOKEN", _token), ("DATABRICKS_HOST", _host), ("DATABRICKS_MODEL", _model)] if not val]
+if _missing:
+    raise EnvironmentError(
+        f"Missing required environment variables: {', '.join(_missing)}. "
+        "Ensure the secret scope (cs4603-deploy) is configured on the serving endpoint, "
+        "or set these variables in your .env file for local testing."
+    )
+
 llm = ChatOpenAI(
-    model=os.environ.get("DATABRICKS_MODEL", "databricks-qwen35-122b-a10b"),
-    api_key=os.environ.get("DATABRICKS_TOKEN", ""),
-    base_url=os.environ.get("DATABRICKS_HOST", "").rstrip("/") + "/serving-endpoints",
+    model=_model,
+    api_key=_token,
+    base_url=_host.rstrip("/") + "/serving-endpoints",
     reasoning_effort="none",
     temperature=0,
 )

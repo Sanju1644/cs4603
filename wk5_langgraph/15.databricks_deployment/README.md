@@ -7,7 +7,7 @@ Deploy a LangGraph agent as a **Databricks Model Serving endpoint** — packagin
 Databricks Model Serving lets you host any MLflow-logged model behind a managed REST endpoint. The deployment pipeline for a LangGraph agent has four stages:
 
 1. **Define the agent (`agent.py`)**
-   The agent graph (nodes, edges, tools, LLM binding) lives in a single self-contained Python file. At the bottom of this file, `mlflow.models.set_model(graph)` declares which object MLflow should serialize. The file reads `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, and `DATABRICKS_MODEL` from environment variables — at serving time, Databricks injects these automatically via endpoint environment configuration.
+   The agent graph (nodes, edges, tools, LLM binding) lives in a single self-contained Python file. At the bottom of this file, `mlflow.models.set_model(graph)` declares which object MLflow should serialize. The file reads `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, and `DATABRICKS_MODEL` from environment variables — at serving time, Databricks resolves these from the secret scope (`cs4603-deploy`) configured on the endpoint and injects them as environment variables into the serving container.
 
 2. **Log to MLflow (models-from-code)**
    Rather than pickling the graph, MLflow uses *models-from-code* logging: it stores `agent.py` as a source artifact and re-executes it at load time. The call is:
@@ -108,6 +108,48 @@ Once live, any OpenAI-compatible client (Python `openai` SDK, `curl`, Streamlit 
    notebooks unchanged), but you can force deployment to use this profile with
    the `--profile` flag (see below). The profile takes precedence over the
    `DATABRICKS_HOST`/`DATABRICKS_TOKEN` values in `.env`.
+
+5. **Create a Databricks secret scope** to securely store credentials for the serving endpoint.
+
+   **What are secrets and secret scopes?**
+
+   A **secret** is a key-value pair stored securely in Databricks — think of it as an encrypted environment variable that lives in the cloud rather than in a file on your laptop. You use secrets for sensitive values like API tokens, passwords, and connection strings that should never appear in plain text in code, logs, or endpoint configurations.
+
+   A **secret scope** is a named container that groups related secrets together. For example, a scope called `cs4603-deploy` might hold three secrets: `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, and `DATABRICKS_MODEL`. Scopes let you organize secrets by project or purpose, and control who can read them via Databricks ACLs (access control lists).
+
+   **Why do we need them here?** When the agent runs inside a serving container, it needs a token to call the LLM model-serving endpoint. If you put the token directly in the endpoint config as plain text, anyone with `CAN_MANAGE` permission on the endpoint can see it. Instead, you store the token as a secret and reference it with `{{secrets/scope/key}}` syntax in the endpoint configuration. At startup, the serving container resolves these references — it fetches the actual values from the secret scope and injects them as environment variables. Your token never appears in the endpoint config, API responses, or logs.
+
+   **One-time setup — run these commands once:**
+
+   ```bash
+   # 1. Create a secret scope (name it whatever you like)
+   databricks secrets create-scope cs4603-deploy
+
+   # 2. Store your Databricks PAT (personal access token) as a secret
+   #    Use the token for the workspace where the LLM model endpoint lives.
+   databricks secrets put-secret cs4603-deploy DATABRICKS_TOKEN --string-value "dapi..."
+
+   # 3. Store the workspace host
+   databricks secrets put-secret cs4603-deploy DATABRICKS_HOST --string-value "https://<workspace>.databricks.com"
+
+   # 4. Store the model endpoint name
+   databricks secrets put-secret cs4603-deploy DATABRICKS_MODEL --string-value "databricks-qwen35-122b-a10b"
+   ```
+
+   **Verify your secrets were created:**
+   ```bash
+   # List all secrets in the scope (values are redacted, only names shown)
+   databricks secrets list-secrets cs4603-deploy
+   ```
+
+   The deployment scripts reference these secrets in the serving endpoint's `environment_vars` as:
+   ```
+   DATABRICKS_HOST  = {{secrets/cs4603-deploy/DATABRICKS_HOST}}
+   DATABRICKS_TOKEN = {{secrets/cs4603-deploy/DATABRICKS_TOKEN}}
+   DATABRICKS_MODEL = {{secrets/cs4603-deploy/DATABRICKS_MODEL}}
+   ```
+
+   > **Note:** If you need to update a secret (e.g. after rotating your PAT), just run the `put-secret` command again — it overwrites the existing value. No need to recreate the scope or redeploy the endpoint; the serving container picks up the new value on next restart.
 
 ## Deployment Steps
 

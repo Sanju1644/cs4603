@@ -194,9 +194,9 @@ else
     "workload_size": "Small",
     "scale_to_zero_enabled": true,
     "environment_vars": {
-        "DATABRICKS_HOST": "${DATABRICKS_HOST}",
-        "DATABRICKS_TOKEN": "${API_KEY}",
-        "DATABRICKS_MODEL": "${DATABRICKS_MODEL}"
+        "DATABRICKS_HOST": "{{secrets/cs4603-deploy/DATABRICKS_HOST}}",
+        "DATABRICKS_TOKEN": "{{secrets/cs4603-deploy/DATABRICKS_TOKEN}}",
+        "DATABRICKS_MODEL": "{{secrets/cs4603-deploy/DATABRICKS_MODEL}}"
     }
 }
 EOF
